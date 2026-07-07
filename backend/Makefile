@@ -161,6 +161,24 @@ shell: ## Open a shell inside the container (ARG overrides default)
 		exit 1; \
 	fi
 
+test: ## Run tests inside container (pass ARGS for extra pytest flags or paths)
+	@if ! $(DC) ps --filter "name=^/$(CONTAINER)$$" --format '{{.ID}}' | grep -q .; then \
+		echo "$(ERROR) Container $(CONTAINER) is not running. Start it with 'make up'.$(END)"; \
+		exit 1; \
+	fi
+	@echo "$(INFO) Running tests...$(END)"
+	$(DC) exec $(CONTAINER) pytest tests/ $(ARGS)
+	@echo "$(SUCCESS) Tests completed$(END)"
+
+test-cov: ## Run tests with coverage report (pass ARGS for extra pytest flags or paths)
+	@if ! $(DC) ps --filter "name=^/$(CONTAINER)$$" --format '{{.ID}}' | grep -q .; then \
+		echo "$(ERROR) Container $(CONTAINER) is not running. Start it with 'make up'.$(END)"; \
+		exit 1; \
+	fi
+	@echo "$(INFO) Running tests with coverage...$(END)"
+	$(DC) exec $(CONTAINER) pytest --cov=app tests/ --cov-report=term-missing $(ARGS)
+	@echo "$(SUCCESS) Coverage report generated$(END)"
+
 # ── Cleanup ─────────────────────────────────────────────────────────────────
 
 clean: ## Remove container (but keep image)

@@ -21,7 +21,10 @@ ERROR = $(LIGTH)$(RED)[ERROR]$(END)
 RMV = rm -rf
 DC = docker
 NAME = backend
-IMAGE = img_$(NAME)
+MODE = $(or $(ARG),dev)
+IMAGE_DEV = img_$(NAME)_dev
+IMAGE_PROD = img_$(NAME)_prod
+IMAGE = $(if $(filter dev,$(MODE)),$(IMAGE_DEV),$(IMAGE_PROD))
 CONTAINER = $(NAME)
 
 
@@ -35,18 +38,19 @@ help: ## Show this help
 	@echo "$(INFO) Available targets:$(END)"
 	@awk 'BEGIN {FS = ":.*?## "} /^[a-zA-Z_-]+:.*?## / {printf "  $(LIGTH)%-20s$(END) %s\n", $$1, $$2}' $(MAKEFILE_LIST)
 
-build: ## Build image
-	$(DC) build --no-cache -t img_$(NAME) .
+build: ## Build image (default: dev, use ARG=prod for production)
+	$(DC) build --no-cache --target $(MODE) -t $(IMAGE) .
+	@echo "$(SUCCESS) Image $(IMAGE) built ($(MODE) stage)$(END)"
 
 # ── Container lifecycle ────────────────────────────────────────────────────
 
-up: ## Run container in background (mounts current dir, maps port 5000)
+up: ## Run container in background (default: dev, use ARG=prod for production)
 	@if [ -n "$$($(DC) ps -a --filter name=^/$(CONTAINER)$$ --format '{{.ID}}')" ]; then \
 		echo "$(WARNING) Container $(CONTAINER) already exists. Use 'make start' or 'make down' first.$(END)"; \
 		exit 1; \
 	fi
 	$(DC) run -d --name $(CONTAINER) -p 5000:5000 -v "$$(pwd):/app" --env-file .env $(IMAGE)
-	@echo "$(SUCCESS) Container $(CONTAINER) started$(END)"
+	@echo "$(SUCCESS) Container $(CONTAINER) started with $(IMAGE)$(END)"
 
 down: ## Stop and remove container
 	@if $(DC) ps -a --filter "name=^/$(CONTAINER)$$" --format '{{.ID}}' | grep -q .; then \
@@ -161,22 +165,22 @@ shell: ## Open a shell inside the container (ARG overrides default)
 		exit 1; \
 	fi
 
-test: ## Run tests inside container (pass ARGS for extra pytest flags or paths)
+test: ## Run tests inside container (pass ARGS for extra flags)
 	@if ! $(DC) ps --filter "name=^/$(CONTAINER)$$" --format '{{.ID}}' | grep -q .; then \
 		echo "$(ERROR) Container $(CONTAINER) is not running. Start it with 'make up'.$(END)"; \
 		exit 1; \
 	fi
 	@echo "$(INFO) Running tests...$(END)"
-	$(DC) exec $(CONTAINER) pytest tests/ $(ARGS)
+	$(DC) exec -e PYTHONPATH=/app $(CONTAINER) pytest tests/ --import-mode=importlib $(ARGS)
 	@echo "$(SUCCESS) Tests completed$(END)"
 
-test-cov: ## Run tests with coverage report (pass ARGS for extra pytest flags or paths)
+test-cov: ## Run tests with coverage report (pass ARGS for extra flags)
 	@if ! $(DC) ps --filter "name=^/$(CONTAINER)$$" --format '{{.ID}}' | grep -q .; then \
 		echo "$(ERROR) Container $(CONTAINER) is not running. Start it with 'make up'.$(END)"; \
 		exit 1; \
 	fi
 	@echo "$(INFO) Running tests with coverage...$(END)"
-	$(DC) exec $(CONTAINER) pytest --cov=app tests/ --cov-report=term-missing $(ARGS)
+	$(DC) exec -e PYTHONPATH=/app $(CONTAINER) pytest --cov=app tests/ --cov-report=term-missing --import-mode=importlib $(ARGS)
 	@echo "$(SUCCESS) Coverage report generated$(END)"
 
 # ── Cleanup ─────────────────────────────────────────────────────────────────
@@ -190,20 +194,30 @@ clean: ## Remove container (but keep image)
 		echo "$(INFO) No container to clean$(END)"; \
 	fi
 
-fclean: ## Remove container and image
+fclean: ## Remove container and images (both dev and prod)
 	@# Remove container if exists
 	@if $(DC) ps -a --filter "name=^/$(CONTAINER)$$" --format '{{.ID}}' | grep -q .; then \
 		$(DC) stop $(CONTAINER) >/dev/null 2>&1; \
 		$(DC) rm $(CONTAINER) >/dev/null; \
 		echo "$(SUCCESS) Container $(CONTAINER) removed$(END)"; \
 	fi
-	@# Remove image if exists
-	@if $(DC) image inspect $(IMAGE) >/dev/null 2>&1; then \
-		$(DC) rmi $(IMAGE) >/dev/null; \
-		echo "$(SUCCESS) Image $(IMAGE) removed$(END)"; \
-	else \
-		echo "$(INFO) Image $(IMAGE) not found$(END)"; \
+	@# Remove dev image if exists
+	@if $(DC) image inspect $(IMAGE_DEV) >/dev/null 2>&1; then \
+		$(DC) rmi $(IMAGE_DEV) >/dev/null; \
+		echo "$(SUCCESS) Image $(IMAGE_DEV) removed$(END)"; \
+	fi
+	@# Remove prod image if exists
+	@if $(DC) image inspect $(IMAGE_PROD) >/dev/null 2>&1; then \
+		$(DC) rmi $(IMAGE_PROD) >/dev/null; \
+		echo "$(SUCCESS) Image $(IMAGE_PROD) removed$(END)"; \
 	fi
 
-.PHONY: all help build up down start stop restart info clean fclean
+py: ## Display command to activate virtual environment
+	@echo "$(INFO) Run this command manually to activate the virtual environment:$(END)"
+	@echo "    . .venv/bin/activate"
+
+re: fclean all ## Rebuild everything from scratch (fclean + all)
+	@echo "$(SUCCESS) Full rebuild completed$(END)"
+
+.PHONY: all help build up down start stop restart info clean fclean re
 .SILENT:

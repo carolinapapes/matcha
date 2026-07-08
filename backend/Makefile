@@ -165,23 +165,59 @@ shell: ## Open a shell inside the container (ARG overrides default)
 		exit 1; \
 	fi
 
-test: ## Run tests inside container (pass ARGS for extra flags)
-	@if ! $(DC) ps --filter "name=^/$(CONTAINER)$$" --format '{{.ID}}' | grep -q .; then \
-		echo "$(ERROR) Container $(CONTAINER) is not running. Start it with 'make up'.$(END)"; \
-		exit 1; \
-	fi
-	@echo "$(INFO) Running tests...$(END)"
-	$(DC) exec -e PYTHONPATH=/app $(CONTAINER) pytest tests/ --import-mode=importlib $(ARGS)
-	@echo "$(SUCCESS) Tests completed$(END)"
+lint: ## Lint code (via check)
+	@$(MAKE) check ARG=lint FLAGS="$(ARGS)"
 
-test-cov: ## Run tests with coverage report (pass ARGS for extra flags)
+format: ## Check code formatting (via check)
+	@$(MAKE) check ARG=format FLAGS="$(ARGS)"
+
+typecheck: ## Static type checking (via check)
+	@$(MAKE) check ARG=typecheck FLAGS="$(ARGS)"
+
+security: ## Security analysis (via check)
+	@$(MAKE) check ARG=security FLAGS="$(ARGS)"
+
+audit: ## Audit dependencies for vulnerabilities (via check)
+	@$(MAKE) check ARG=audit FLAGS="$(ARGS)"
+
+test: ## Run tests (via check)
+	@$(MAKE) check ARG=test FLAGS="$(ARGS)"
+
+test-cov: ## Run tests with coverage (via check)
+	@$(MAKE) check ARG=test-cov FLAGS="$(ARGS)"
+
+check: ## Run quality checks (ARG: lint, format, typecheck, security, audit, test, test-cov)
 	@if ! $(DC) ps --filter "name=^/$(CONTAINER)$$" --format '{{.ID}}' | grep -q .; then \
 		echo "$(ERROR) Container $(CONTAINER) is not running. Start it with 'make up'.$(END)"; \
 		exit 1; \
 	fi
-	@echo "$(INFO) Running tests with coverage...$(END)"
-	$(DC) exec -e PYTHONPATH=/app $(CONTAINER) pytest --cov=app tests/ --cov-report=term-missing --import-mode=importlib $(ARGS)
-	@echo "$(SUCCESS) Coverage report generated$(END)"
+	@case "$(ARG)" in \
+		lint) \
+			echo "$(INFO) Running linter (ruff)...$(END)"; \
+			$(DC) exec -e PYTHONPATH=/app $(CONTAINER) ruff check . ;; \
+		format) \
+			echo "$(INFO) Checking formatting (ruff format --check)...$(END)"; \
+			$(DC) exec -e PYTHONPATH=/app $(CONTAINER) ruff format --check . ;; \
+		typecheck) \
+			echo "$(INFO) Running type checker (mypy)...$(END)"; \
+			$(DC) exec -e PYTHONPATH=/app $(CONTAINER) mypy app/ tests/ ;; \
+		security) \
+			echo "$(INFO) Running security analysis (bandit)...$(END)"; \
+			$(DC) exec -e PYTHONPATH=/app $(CONTAINER) bandit -r app/ ;; \
+		audit) \
+			echo "$(INFO) Auditing dependencies (pip-audit)...$(END)"; \
+			$(DC) exec -e PYTHONPATH=/app $(CONTAINER) pip-audit ;; \
+		test) \
+			echo "$(INFO) Running tests...$(END)"; \
+			$(DC) exec -e PYTHONPATH=/app $(CONTAINER) pytest tests/ --import-mode=importlib $(FLAGS) ;; \
+		test-cov) \
+			echo "$(INFO) Running tests with coverage...$(END)"; \
+			$(DC) exec -e PYTHONPATH=/app $(CONTAINER) pytest --cov=app --cov-report=term-missing tests/ --import-mode=importlib $(FLAGS) ;; \
+		*) \
+			echo "$(ERROR) Invalid check type. Use: lint, format, typecheck, security, audit, test, test-cov$(END)"; \
+			exit 1 ;; \
+	esac
+	@echo "$(SUCCESS) Check '$(ARG)' completed$(END)"
 
 # ── Cleanup ─────────────────────────────────────────────────────────────────
 

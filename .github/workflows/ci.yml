@@ -1,41 +1,41 @@
 name: Matcha CI/CD Pipeline
 
 on:
-	push:
-		branches: [ main, develop, "feature/*", "fix/*" ]
-	pull_request:
-		branches: [ main, develop ]
+  push:
+    branches: [ main, develop, "feature/*", "fix/*" ]
+  pull_request:
+    branches: [ main, develop ]
 
 permissions:
-	contents: read
-	pull-requests: write
-	issues: write
+  contents: read
+  pull-requests: write
+  issues: write
 
 jobs:
-	backend-tests:
-		runs-on: ubuntu-latest
-		name: Backend Tests
-	
-		steps:
-		  - name: Checkout code
-			uses: actions/checkout@v4
-	
-		  - name: Set up Docker Buildx
-			uses: docker/setup-buildx-action@v3
-	
-		  - name: Build backend dev image
-			run: |
-			  docker build \
-				--target dev \
-				-t img_backend_dev \
-				-f backend/Dockerfile \
-				backend/
-	
-		  - name: Run backend tests
-			run: |
-			  docker run --rm \
-				-v ${{ github.workspace }}/backend:/app \
-				-w /app \
-				-e PYTHONPATH=/app \
-				img_backend_dev \
-				pytest tests/ --import-mode=importlib --cov=app --cov-report=term-missing
+  backend-tests:
+    runs-on: ubuntu-latest
+    name: Backend Tests
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build backend dev image
+        run: |
+          docker build \
+            --target dev \
+            -t img_backend_dev \
+            -f backend/Dockerfile \
+            backend/
+
+      - name: Debug - check container files
+        run: |
+          docker run --rm \
+            -v ${{ github.workspace }}/backend:/app \
+            -w /app \
+            -e PYTHONPATH=/app \
+            img_backend_dev \
+            pytest tests/ --import-mode=importlib --cov=app --cov-report=term-missing

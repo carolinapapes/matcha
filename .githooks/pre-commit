@@ -5,6 +5,24 @@ set -euo pipefail
 echo "Running tests before commit..."
 echo "TODO ADD TESTS HERE"
 
+branch="$(git branch --show-current)"
+
+if [[ "$branch" == "main" ]]; then
+  echo "Commit blocked: commits directly on main are not allowed."
+  exit 1
+fi
+
+if [[ ! "$branch" =~ ^[0-9]+- ]]; then
+  echo "Commit blocked: branch name must start with an issue number."
+  echo
+  echo "Expected:"
+  echo "  <issue-number>-<description>"
+  echo
+  echo "Example:"
+  echo "  44-generate-pr-descriptions-with-codex"
+  exit 1
+fi
+
 binary_files="$(
   git diff --cached --numstat |
   awk '$1 == "-" && $2 == "-" {print $3}'

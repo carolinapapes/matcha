@@ -44,7 +44,9 @@ Include known limitations, follow-up work, migration requirements, secrets, conf
 ```
 
 ## Rules
-
+- Describe the user-visible or workflow impact, not only the condition used in the code.
+- Avoid passive summaries such as “is only replaced when”.
+- Prefer action-oriented wording that explains the safeguard and its purpose.
 - Use the issue number supplied in the trusted metadata.
 - Do not invent files, behavior, tests, decisions, or validation.
 - Do not present planned work as completed.

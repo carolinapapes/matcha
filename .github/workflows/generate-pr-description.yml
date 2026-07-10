@@ -63,6 +63,8 @@ jobs:
         with:
           openai-api-key: ${{ secrets.OPENAI_API_KEY }}
           prompt-file: /tmp/pr-description-prompt.md
+          model: gpt-5-mini
+          effort: low
           sandbox: read-only
           safety-strategy: drop-sudo
           codex-args: '["--ephemeral"]'

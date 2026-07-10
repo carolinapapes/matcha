@@ -1,0 +1,35 @@
+name: Commit message validation
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, edited]
+
+permissions:
+  contents: read
+
+jobs:
+  validate-commit-messages:
+    name: Validate commit messages
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out pull request history
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Make validator executable
+        run: chmod +x .githooks/validate-commit-message
+
+      - name: Validate pull request commits
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+
+          git log --format='%s' "$BASE_SHA..$HEAD_SHA" |
+          while IFS= read -r subject; do
+            echo "Checking: $subject"
+            .githooks/validate-commit-message "$subject"
+          done

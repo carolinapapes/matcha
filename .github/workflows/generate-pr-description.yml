@@ -1,0 +1,101 @@
+name: Generate PR description
+
+on:
+  pull_request:
+    types: [opened]
+
+permissions:
+  contents: read
+
+jobs:
+  generate-description:
+    name: Generate PR description
+    runs-on: ubuntu-latest
+
+    outputs:
+      description: ${{ steps.codex.outputs.final-message }}
+
+    steps:
+      - name: Check out pull request
+        uses: actions/checkout@v5
+        with:
+          ref: refs/pull/${{ github.event.pull_request.number }}/merge
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Prepare prompt with PR metadata
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
+          BASE_REF: ${{ github.event.pull_request.base.ref }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+
+          if [[ "$HEAD_REF" =~ ^([0-9]+)- ]]; then
+            issue_number="${BASH_REMATCH[1]}"
+          else
+            echo "Branch must start with an issue number."
+            echo "Example: 44-generate-pr-descriptions-with-codex"
+            exit 1
+          fi
+
+          cp             .github/codex/prompts/pr-description.md             /tmp/pr-description-prompt.md
+
+          cat >> /tmp/pr-description-prompt.md <<EOF
+
+          ## Trusted pull request metadata
+
+          - Pull request: #${PR_NUMBER}
+          - Issue number: ${issue_number}
+          - Head branch: ${HEAD_REF}
+          - Base branch: ${BASE_REF}
+          - Base SHA: ${BASE_SHA}
+          - Head SHA: ${HEAD_SHA}
+
+          Inspect the commit range ${BASE_SHA}..${HEAD_SHA} and the pull request diff.
+          EOF
+
+      - name: Generate description with Codex
+        id: codex
+        uses: openai/codex-action@v1
+        with:
+          openai-api-key: ${{ secrets.OPENAI_API_KEY }}
+          prompt-file: /tmp/pr-description-prompt.md
+          sandbox: read-only
+          safety-strategy: drop-sudo
+          codex-args: '["--ephemeral"]'
+
+  update-description:
+    name: Update PR description
+    needs: generate-description
+
+    if: needs.generate-description.outputs.description != ''
+
+    runs-on: ubuntu-latest
+
+    permissions:
+      pull-requests: write
+
+    steps:
+      - name: Replace PR body
+        uses: actions/github-script@v7
+        env:
+          GENERATED_DESCRIPTION: ${{ needs.generate-description.outputs.description }}
+        with:
+          github-token: ${{ github.token }}
+          script: |
+            const body = process.env.GENERATED_DESCRIPTION?.trim();
+
+            if (!body) {
+              core.setFailed("Codex returned an empty PR description.");
+              return;
+            }
+
+            await github.rest.pulls.update({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: context.payload.pull_request.number,
+              body,
+            });

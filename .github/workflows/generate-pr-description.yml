@@ -2,7 +2,7 @@ name: Generate PR description
 
 on:
   pull_request:
-    types: [opened]
+    types: [opened, synchronize, reopened]
 
 permissions:
   contents: read

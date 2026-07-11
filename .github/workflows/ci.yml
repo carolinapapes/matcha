@@ -29,7 +29,7 @@ permissions:
 
 jobs:
   backend-tests:
-    name: Backend tests
+    name: Backend Tests
     runs-on: ubuntu-latest
     timeout-minutes: 15
 

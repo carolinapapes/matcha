@@ -9,16 +9,6 @@ on:
       - opened
       - synchronize
       - reopened
-    paths:
-      - "backend/**"
-      - ".github/workflows/ci.yml"
-      - "!backend/**/*.md"
-      - "!backend/docs/**"
-      - "!backend/**/*.png"
-      - "!backend/**/*.jpg"
-      - "!backend/**/*.jpeg"
-      - "!backend/**/*.gif"
-      - "!backend/**/*.svg"
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
@@ -36,11 +26,49 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Check for relevant backend changes
+        id: changes
+        shell: bash
+        run: |
+          changed_files="$(
+            git diff --name-only \
+              "${{ github.event.pull_request.base.sha }}" \
+              "${{ github.event.pull_request.head.sha }}"
+          )"
+
+          echo "Changed files:"
+          echo "$changed_files"
+
+          relevant_files="$(
+            echo "$changed_files" |
+              grep -E '^(backend/|\.github/workflows/ci\.yml$)' |
+              grep -Ev '^backend/docs/' |
+              grep -Ev '^backend/.*\.(md|png|jpg|jpeg|gif|svg)$' ||
+              true
+          )"
+
+          if [ -n "$relevant_files" ]; then
+            echo "backend_changed=true" >> "$GITHUB_OUTPUT"
+            echo "Relevant backend changes:"
+            echo "$relevant_files"
+          else
+            echo "backend_changed=false" >> "$GITHUB_OUTPUT"
+            echo "No relevant backend changes."
+          fi
+
+      - name: Skip backend tests
+        if: steps.changes.outputs.backend_changed != 'true'
+        run: echo "Backend tests are not required. Check passes."
 
       - name: Set up Docker Buildx
+        if: steps.changes.outputs.backend_changed == 'true'
         uses: docker/setup-buildx-action@v4
 
       - name: Build backend test image
+        if: steps.changes.outputs.backend_changed == 'true'
         uses: docker/build-push-action@v7
         with:
           context: backend
@@ -52,6 +80,7 @@ jobs:
           cache-to: type=gha,mode=max,scope=matcha-backend-dev
 
       - name: Run backend tests
+        if: steps.changes.outputs.backend_changed == 'true'
         run: |
           docker run --rm \
             -v "${{ github.workspace }}/backend:/app" \

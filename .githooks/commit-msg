@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+commit_message_file="${1:?Missing commit message file}"
+subject="$(head -n 1 "$commit_message_file")"
+hook_directory="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+"$hook_directory/validate-commit-message" "$subject"

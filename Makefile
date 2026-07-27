@@ -20,10 +20,44 @@ ERROR = $(LIGTH)$(RED)[ERROR]$(END)
 ################################################################################
 RMV = rm -rf
 DC = docker compose
+NAME = matcha-
+
+LIST_CON = frontend backend nginx postgres redis socket
+
+define VALIDATE_ARG
+valid=0; \
+for s in $(LIST_CON); do \
+	if [ "$$s" = "$(ARG)" ]; then \
+		valid=1; \
+		break; \
+	fi; \
+done; \
+if [ $$valid -eq 0 ]; then \
+	echo "$(ERROR) Invalid service: '$(ARG)'. Valid services: $(LIST_CON)$(END)"; \
+	exit 1; \
+fi
+endef
+
+define VALIDATE_SERVICE
+valid=0; \
+for s in $(LIST_CON); do \
+	if [ "$$s" = "$(SERVICE)" ]; then \
+		valid=1; \
+		break; \
+	fi; \
+done; \
+if [ $$valid -eq 0 ]; then \
+	echo "$(ERROR) Invalid service: '$(SERVICE)'. Valid services: $(LIST_CON)$(END)"; \
+	exit 1; \
+fi
+endef
 
 ################################################################################
 #                                  TARGETS                                     #
 ################################################################################
+
+all: build up ## Build all images and start services
+	@echo "$(SUCCESS) All services are up and running$(END)"
 
 help: ## Show this help
 	@echo "$(INFO) Available targets:$(END)"
@@ -31,24 +65,46 @@ help: ## Show this help
 
 # ── Global container control ──────────────────────────────────────────────
 
+LIST_CON = frontend backend nginx postgres redis socket
+
 build: ## Build all images (accepts ARG for service)
 	@if [ -n "$(ARG)" ]; then \
-		echo "$(INFO) Would run: $(DC) build $(ARG)$(END)"; \
+		$(VALIDATE_ARG); \
+		echo "$(INFO) Would run: $(DC) $@ $(ARG)$(END)"; \
+		$(DC) $@ --no-cache $(ARG); \
 	else \
 		echo "$(INFO) Would run: $(DC) build$(END)"; \
+		$(DC) $@ --no-cache; \
 	fi
 
 up: ## Start all services (detached)
-	@echo "$(INFO) Would run: $(DC) up -d$(END)"
+	@if [ -n "$(ARG)" ]; then \
+		$(VALIDATE_ARG); \
+		echo "$(INFO) Would run: $(DC) $@ $(ARG)$(END)"; \
+		$(DC) $@ --detach $(ARG); \
+	else \
+		echo "$(INFO) Would run: $(DC) build$(END)"; \
+		$(DC) $@ --detach; \
+	fi
 
 down: ## Stop and remove all services
-	@echo "$(INFO) Would run: $(DC) down$(END)"
+	@if [ -n "$(ARG)" ]; then \
+		$(VALIDATE_ARG); \
+		echo "$(INFO) Would run: $(DC) $@ $(ARG)$(END)"; \
+		$(DC) $@ $(ARG); \
+	else \
+		echo "$(INFO) Would run: $(DC) build$(END)"; \
+		$(DC) $@; \
+	fi
 
 restart: ## Restart all or a specific service (ARG)
 	@if [ -n "$(ARG)" ]; then \
-		echo "$(INFO) Would run: $(DC) restart $(ARG)$(END)"; \
+		$(VALIDATE_ARG); \
+		echo "$(INFO) Would run: $(DC) $@ $(ARG)$(END)"; \
+		$(DC) $@ $(ARG); \
 	else \
-		echo "$(INFO) Would run: $(DC) restart$(END)"; \
+		echo "$(INFO) Would run: $(DC) build$(END)"; \
+		$(DC) $@; \
 	fi
 
 start: ## Start a specific stopped container (usage: make start ARG=<name>)
@@ -56,8 +112,10 @@ start: ## Start a specific stopped container (usage: make start ARG=<name>)
 	if [ -z "$$ARG" ]; then \
 		echo "$(ERROR) ARG is required. Usage: make start ARG=<container_name>$(END)"; \
 		exit 1; \
-	fi; \
-	echo "$(INFO) Would run: $(DC) start $$ARG$(END)"
+	fi;
+	$(VALIDATE_ARG)
+	echo "$(INFO) Would run: $(DC) $@ $$ARG$(END)"
+	$(DC) $@ $(ARG)
 
 stop: ## Stop a specific running container (usage: make stop ARG=<name>)
 	@ARG='$(ARG)'; \
@@ -65,28 +123,73 @@ stop: ## Stop a specific running container (usage: make stop ARG=<name>)
 		echo "$(ERROR) ARG is required. Usage: make stop ARG=<container_name>$(END)"; \
 		exit 1; \
 	fi; \
-	echo "$(INFO) Would run: $(DC) stop $$ARG$(END)"
+	$(VALIDATE_ARG)
+	echo "$(INFO) Would run: $(DC) $@ $$ARG$(END)"
+	$(DC) $@ $(ARG)
 
-logs: ## View logs. Usage: make logs ARG=<name> [FLAGS="-f"]
-	@ARG='$(ARG)'; \
-	if [ -z "$$ARG" ]; then \
-		echo "$(ERROR) ARG is required. Usage: make logs ARG=<container_name>$(END)"; \
-		exit 1; \
-	fi; \
-	NAMES=$$(docker ps -a --filter "name=$$ARG" --format '{{.Names}}' 2>/dev/null); \
-	if [ -z "$$NAMES" ]; then \
-		echo "$(ERROR) No container found matching '$$ARG'$(END)"; \
-		exit 1; \
-	fi; \
-	COUNT=$$(echo "$$NAMES" | wc -l); \
-	if [ $$COUNT -gt 1 ]; then \
-		echo "$(ERROR) Multiple containers found:$(END)"; \
-		echo "$$NAMES"; \
-		echo "$(WARNING) Please specify a more precise name.$(END)"; \
-		exit 1; \
-	fi; \
-	echo "$(INFO) Showing logs for container: $$NAMES$(END)"; \
-	docker logs $$NAMES $(FLAGS)
+info: ## Project overview / inspect (ARG=img|ps|logs, optional SERVICE=<name>)
+	@case "$(ARG)" in \
+		img) \
+			if [ -n "$(SERVICE)" ]; then \
+				$(VALIDATE_SERVICE); \
+				IMG=$$(docker compose images -q $(SERVICE) 2>/dev/null); \
+				if [ -n "$$IMG" ]; then \
+					echo "$(SUCCESS) Image for $(SERVICE):$(END) $$IMG"; \
+					docker compose images $(SERVICE); \
+				else \
+					echo "$(ERROR) No image found for service $(SERVICE)$(END)"; \
+					exit 1; \
+				fi; \
+			else \
+				echo "$(INFO) Project images:$(END)"; \
+				docker compose images; \
+			fi ;; \
+		ps) \
+			if [ -n "$(SERVICE)" ]; then \
+				$(VALIDATE_SERVICE); \
+				echo "$(INFO) Status of $(SERVICE):$(END)"; \
+				docker compose ps $(SERVICE); \
+			else \
+				echo "$(INFO) All containers:$(END)"; \
+				docker compose ps --all --format "table {{.Name}}\t{{.Status}}\t{{.Ports}}"; \
+			fi ;; \
+		logs) \
+			if [ -n "$(SERVICE)" ]; then \
+				$(VALIDATE_SERVICE); \
+				echo "$(INFO) Showing logs for $(SERVICE)...$(END)"; \
+				docker compose logs $(FLAGS) $(SERVICE); \
+			else \
+				echo "$(INFO) Showing logs for all services...$(END)"; \
+				docker compose logs $(FLAGS); \
+			fi ;; \
+		"") \
+			if [ -n "$(SERVICE)" ]; then \
+				$(VALIDATE_SERVICE); \
+				echo "$(INFO) Info for service $(SERVICE):$(END)"; \
+				echo "Image:"; \
+				IMG=$$(docker compose images -q $(NAME)$(SERVICE) 2>/dev/null); \
+				if [ -n "$$IMG" ]; then \
+					echo "$(SUCCESS) Image for $(SERVICE):$(END)"; \
+					docker image ls --filter "reference=$$(docker compose images --format '{{.Repository}}:{{.Tag}}' $(SERVICE) 2>/dev/null)"; \
+				else \
+					echo "$(ERROR) No image found$(END)"; \
+				fi; \
+				echo ""; \
+				echo "Container status:"; \
+				docker compose ps $(SERVICE) 2>/dev/null || echo "$(ERROR) Container not found$(END)"; \
+			else \
+				echo "$(INFO) Project overview:$(END)"; \
+				echo ""; \
+				echo "Images:"; \
+				docker compose images; \
+				echo ""; \
+				echo "Containers:"; \
+				docker compose ps --all --format "table {{.Name}}\t{{.Status}}\t{{.Ports}}"; \
+			fi ;; \
+		*) \
+			echo "$(ERROR) Invalid ARG value: '$(ARG)'. Use 'img', 'ps', 'logs' or leave empty.$(END)"; \
+			exit 1;; \
+	esac
 
 ps: ## List containers. Usage: make ps [ARG=<name>]
 	@ARG='$(ARG)'; \
@@ -110,55 +213,41 @@ ps: ## List containers. Usage: make ps [ARG=<name>]
 
 # ── Cleanup ───────────────────────────────────────────────────────────────
 
-clean: ## Remove containers and volumes (simulation)
-	@echo "$(INFO) Would run: $(DC) down -v$(END)"
+clean: ## Remove containers and volumes
+	@echo "$(INFO) Removing containers and volumes...$(END)"
+	@$(DC) down -v
 
-fclean: ## Full clean: remove images, volumes, orphans (simulation)
-	@echo "$(WARNING) Would run: $(DC) down -v --rmi all --remove-orphans && docker system prune -f$(END)"
+fclean: ## Full clean: remove images, volumes, orphans
+	@echo "$(WARNING) Removing everything (images, volumes, orphans)...$(END)"
+	@$(DC) down -v --rmi all --remove-orphans
+	@docker system prune -f
+	@echo "$(SUCCESS) Full clean done$(END)"
 
 # ── Shell access shortcuts (now accept ARG to override service) ─────────
 
 fe: ## Open shell in frontend container (ARG overrides service)
-	@if [ -n "$(ARG)" ]; then \
-		echo "$(INFO) Would run: $(DC) exec $(ARG) sh$(END)"; \
-	else \
-		echo "$(INFO) Would run: $(DC) exec frontend sh$(END)"; \
-	fi
+	@echo "$(INFO) Would run: $(DC) exec frontend sh$(END)"
+	$(DC) exec frontend sh
 
 be: ## Open shell in backend container (ARG overrides service)
-	@if [ -n "$(ARG)" ]; then \
-		echo "$(INFO) Would run: $(DC) exec $(ARG) sh$(END)"; \
-	else \
-		echo "$(INFO) Would run: $(DC) exec backend sh$(END)"; \
-	fi
+	echo "$(INFO) Would run: $(DC) exec backend sh$(END)"
+	$(DC) exec backend sh
 
 socket: ## Open shell in socket container (ARG overrides service)
-	@if [ -n "$(ARG)" ]; then \
-		echo "$(INFO) Would run: $(DC) exec $(ARG) sh$(END)"; \
-	else \
-		echo "$(INFO) Would run: $(DC) exec socket sh$(END)"; \
-	fi
+	echo "$(INFO) Would run: $(DC) exec socket sh$(END)"
+	$(DC) exec socket sh
 
 nginx: ## Open shell in nginx container (ARG overrides service)
-	@if [ -n "$(ARG)" ]; then \
-		echo "$(INFO) Would run: $(DC) exec $(ARG) sh$(END)"; \
-	else \
-		echo "$(INFO) Would run: $(DC) exec nginx sh$(END)"; \
-	fi
+	echo "$(INFO) Would run: $(DC) exec nginx sh$(END)"
+	$(DC) exec nginx sh
 
 postgres: ## Open psql in postgres container (ARG overrides service)
-	@if [ -n "$(ARG)" ]; then \
-		echo "$(INFO) Would run: $(DC) exec $(ARG) psql -U postgres$(END)"; \
-	else \
-		echo "$(INFO) Would run: $(DC) exec postgres psql -U postgres$(END)"; \
-	fi
+	echo "$(INFO) Would run: $(DC) exec postgres psql -U postgres$(END)"; \
+	$(DC) exec postgres psql -U postgres;
 
 redis: ## Open redis-cli in redis container (ARG overrides service)
-	@if [ -n "$(ARG)" ]; then \
-		echo "$(INFO) Would run: $(DC) exec $(ARG) redis-cli$(END)"; \
-	else \
-		echo "$(INFO) Would run: $(DC) exec redis redis-cli$(END)"; \
-	fi
+	echo "$(INFO) Would run: $(DC) exec redis redis-cli$(END)"
+	$(DC) exec redis redis-cli
 
 # ── Code quality & tests (ARG selects service) ──────────────────────────
 
@@ -194,6 +283,6 @@ test: ## Run tests (ARG overrides service, otherwise both)
 		echo "$(INFO) Would run: $(DC) exec frontend npm test -- --watchAll=false$(END)"; \
 	fi
 
-.PHONY: help build up down restart start stop logs ps clean fclean \
+.PHONY: all help build up down restart start stop logs ps clean fclean \
 		fe be socket nginx postgres redis lint format typecheck test
 .SILENT:

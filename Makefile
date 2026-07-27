@@ -132,59 +132,59 @@ info: ## Project overview / inspect (ARG=img|ps|logs, optional SERVICE=<name>)
 		img) \
 			if [ -n "$(SERVICE)" ]; then \
 				$(VALIDATE_SERVICE); \
-				IMG=$$(docker compose images -q $(SERVICE) 2>/dev/null); \
+				IMG=$$($(DC) images -q $(SERVICE) 2>/dev/null); \
 				if [ -n "$$IMG" ]; then \
 					echo "$(SUCCESS) Image for $(SERVICE):$(END) $$IMG"; \
-					docker compose images $(SERVICE); \
+					$(DC) images $(SERVICE); \
 				else \
 					echo "$(ERROR) No image found for service $(SERVICE)$(END)"; \
 					exit 1; \
 				fi; \
 			else \
 				echo "$(INFO) Project images:$(END)"; \
-				docker compose images; \
+				$(DC) images; \
 			fi ;; \
 		ps) \
 			if [ -n "$(SERVICE)" ]; then \
 				$(VALIDATE_SERVICE); \
 				echo "$(INFO) Status of $(SERVICE):$(END)"; \
-				docker compose ps $(SERVICE); \
+				$(DC) ps $(SERVICE); \
 			else \
 				echo "$(INFO) All containers:$(END)"; \
-				docker compose ps --all --format "table {{.Name}}\t{{.Status}}\t{{.Ports}}"; \
+				$(DC) ps --all --format "table {{.Name}}\t{{.Status}}\t{{.Ports}}"; \
 			fi ;; \
 		logs) \
 			if [ -n "$(SERVICE)" ]; then \
 				$(VALIDATE_SERVICE); \
 				echo "$(INFO) Showing logs for $(SERVICE)...$(END)"; \
-				docker compose logs $(FLAGS) $(SERVICE); \
+				$(DC) logs $(FLAGS) $(SERVICE); \
 			else \
 				echo "$(INFO) Showing logs for all services...$(END)"; \
-				docker compose logs $(FLAGS); \
+				$(DC) logs $(FLAGS); \
 			fi ;; \
 		"") \
 			if [ -n "$(SERVICE)" ]; then \
 				$(VALIDATE_SERVICE); \
 				echo "$(INFO) Info for service $(SERVICE):$(END)"; \
 				echo "Image:"; \
-				IMG=$$(docker compose images -q $(NAME)$(SERVICE) 2>/dev/null); \
+				IMG=$$($(DC) images -q $(NAME)$(SERVICE) 2>/dev/null); \
 				if [ -n "$$IMG" ]; then \
 					echo "$(SUCCESS) Image for $(SERVICE):$(END)"; \
-					docker image ls --filter "reference=$$(docker compose images --format '{{.Repository}}:{{.Tag}}' $(SERVICE) 2>/dev/null)"; \
+					docker image ls --filter "reference=$$($(DC) images --format '{{.Repository}}:{{.Tag}}' $(SERVICE) 2>/dev/null)"; \
 				else \
 					echo "$(ERROR) No image found$(END)"; \
 				fi; \
 				echo ""; \
 				echo "Container status:"; \
-				docker compose ps $(SERVICE) 2>/dev/null || echo "$(ERROR) Container not found$(END)"; \
+				$(DC) ps $(SERVICE) 2>/dev/null || echo "$(ERROR) Container not found$(END)"; \
 			else \
 				echo "$(INFO) Project overview:$(END)"; \
 				echo ""; \
 				echo "Images:"; \
-				docker compose images; \
+				$(DC) images; \
 				echo ""; \
 				echo "Containers:"; \
-				docker compose ps --all --format "table {{.Name}}\t{{.Status}}\t{{.Ports}}"; \
+				$(DC) ps --all --format "table {{.Name}}\t{{.Status}}\t{{.Ports}}"; \
 			fi ;; \
 		*) \
 			echo "$(ERROR) Invalid ARG value: '$(ARG)'. Use 'img', 'ps', 'logs' or leave empty.$(END)"; \
@@ -210,6 +210,19 @@ ps: ## List containers. Usage: make ps [ARG=<name>]
 	else \
 		docker ps -a; \
 	fi
+
+logs-split: ## View frontend and backend logs side by side in tmux
+	@if ! command -v tmux >/dev/null 2>&1; then \
+		echo "$(ERROR) tmux is not installed. Install it first.$(END)"; \
+		exit 1; \
+	fi
+	@-tmux kill-session -t matcha-logs 2>/dev/null || true
+	@tmux new-session -d -s matcha-logs
+	@tmux send-keys -t matcha-logs:0.0 '$(DC) logs -f frontend' C-m
+	@tmux split-window -h -t matcha-logs:0.0
+	@tmux send-keys -t matcha-logs:0.1 '$(DC) logs -f backend' C-m
+	@tmux select-layout -t matcha-logs:0 even-horizontal
+	@tmux attach -t matcha-logs
 
 # ── Cleanup ───────────────────────────────────────────────────────────────
 
@@ -283,6 +296,6 @@ test: ## Run tests (ARG overrides service, otherwise both)
 		echo "$(INFO) Would run: $(DC) exec frontend npm test -- --watchAll=false$(END)"; \
 	fi
 
-.PHONY: all help build up down restart start stop logs ps clean fclean \
+.PHONY: all help build up down restart start stop logs ps logs-split clean fclean \
 		fe be socket nginx postgres redis lint format typecheck test
 .SILENT:
